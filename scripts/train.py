@@ -1,5 +1,6 @@
 import os
 import sys
+import wandb
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,6 +20,7 @@ from audiotools.ml.decorators import when
 from torch.utils.tensorboard import SummaryWriter
 
 import dac
+from scripts.dataloader import MyDataset
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -81,23 +83,9 @@ def build_transform(
 
 @argbind.bind("train", "val", "test")
 def build_dataset(
-    sample_rate: int,
     folders: dict = None,
 ):
-    # Give one loader per key/value of dictionary, where
-    # value is a list of folders. Create a dataset for each one.
-    # Concatenate the datasets with ConcatDataset, which
-    # cycles through them.
-    datasets = []
-    for _, v in folders.items():
-        loader = AudioLoader(sources=v)
-        transform = build_transform()
-        dataset = AudioDataset(loader, sample_rate, transform=transform)
-        datasets.append(dataset)
-
-    dataset = ConcatDataset(datasets)
-    dataset.transform = transform
-    return dataset
+    return MyDataset(torch.load(next(iter(folders.values()))[0]))
 
 
 @dataclass
@@ -176,9 +164,9 @@ def load(
 
     sample_rate = accel.unwrap(generator).sample_rate
     with argbind.scope(args, "train"):
-        train_data = build_dataset(sample_rate)
+        train_data = build_dataset()
     with argbind.scope(args, "val"):
-        val_data = build_dataset(sample_rate)
+        val_data = build_dataset()
 
     waveform_loss = losses.L1Loss()
     stft_loss = losses.MultiScaleSTFTLoss()
@@ -207,9 +195,13 @@ def load(
 def val_loop(batch, state, accel):
     state.generator.eval()
     batch = util.prepare_batch(batch, accel.device)
-    signal = state.val_data.transform(
-        batch["signal"].clone(), **batch["transform_args"]
-    )
+    if "transform_args" in batch:
+        with torch.no_grad():
+            signal = state.val_data.transform(
+                batch["signal"].clone(), **batch["transform_args"]
+            )
+    else:
+        signal = batch["signal"].clone()
 
     out = state.generator(signal.audio_data, signal.sample_rate)
     recons = AudioSignal(out["audio"], signal.sample_rate)
@@ -229,10 +221,13 @@ def train_loop(state, batch, accel, lambdas):
     output = {}
 
     batch = util.prepare_batch(batch, accel.device)
-    with torch.no_grad():
-        signal = state.train_data.transform(
-            batch["signal"].clone(), **batch["transform_args"]
-        )
+    if "transform_args" in batch:
+        with torch.no_grad():
+            signal = state.train_data.transform(
+                batch["signal"].clone(), **batch["transform_args"]
+            )
+    else:
+        signal = batch["signal"].clone()
 
     with accel.autocast():
         out = state.generator(signal.audio_data, signal.sample_rate)
@@ -319,9 +314,13 @@ def save_samples(state, val_idx, writer):
     samples = [state.val_data[idx] for idx in val_idx]
     batch = state.val_data.collate(samples)
     batch = util.prepare_batch(batch, accel.device)
-    signal = state.train_data.transform(
-        batch["signal"].clone(), **batch["transform_args"]
-    )
+
+    if "transform_args" in batch:
+        signal = state.train_data.transform(
+            batch["signal"].clone(), **batch["transform_args"]
+        )
+    else:
+        signal = batch["signal"].clone()
 
     out = state.generator(signal.audio_data, signal.sample_rate)
     recons = AudioSignal(out["audio"], signal.sample_rate)
@@ -378,6 +377,14 @@ def train(
         writer=writer, log_file=f"{save_path}/log.txt", rank=accel.local_rank
     )
 
+    wandb.init(
+        # set the wandb project where this run will be logged
+        project="descript-audio-codec",
+
+        # track hyperparameters and run metadata
+        config=args
+    )
+
     state = load(args, accel, tracker, save_path)
     train_dataloader = accel.prepare_dataloader(
         state.train_data,
@@ -411,7 +418,9 @@ def train(
 
     with tracker.live:
         for tracker.step, batch in enumerate(train_dataloader, start=tracker.step):
-            train_loop(state, batch, accel, lambdas)
+            values = train_loop(state, batch, accel, lambdas)
+
+            wandb.log({"train": values})
 
             last_iter = (
                 tracker.step == num_iters - 1 if num_iters is not None else False
@@ -420,7 +429,8 @@ def train(
                 save_samples(state, val_idx, writer)
 
             if tracker.step % valid_freq == 0 or last_iter:
-                validate(state, val_dataloader, accel)
+                validation_output = validate(state, val_dataloader, accel)
+                wandb.log({"val": validation_output})
                 checkpoint(state, save_iters, save_path)
                 # Reset validation progress bar, print summary since last validation.
                 tracker.done("val", f"Iteration {tracker.step}")

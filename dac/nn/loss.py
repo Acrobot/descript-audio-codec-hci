@@ -316,8 +316,10 @@ class MelSpectrogramLoss(nn.Module):
                 "hop_length": s.hop_length,
                 "window_type": s.window_type,
             }
-            x_mels = x.mel_spectrogram(n_mels, mel_fmin=fmin, mel_fmax=fmax, **kwargs)
-            y_mels = y.mel_spectrogram(n_mels, mel_fmin=fmin, mel_fmax=fmax, **kwargs)
+            # x_mels = x.mel_spectrogram(n_mels, mel_fmin=fmin, mel_fmax=fmax, **kwargs)
+            # y_mels = y.mel_spectrogram(n_mels, mel_fmin=fmin, mel_fmax=fmax, **kwargs)
+            x_mels = torch.abs(x.stft(**kwargs))
+            y_mels = torch.abs(y.stft(**kwargs))
 
             loss += self.log_weight * self.loss_fn(
                 x_mels.clamp(self.clamp_eps).pow(self.pow).log10(),

@@ -1,0 +1,23 @@
+$include:
+  - conf/base.yml
+  - conf/1gpu.yml
+  - conf/size/small.yml
+
+DAC.sample_rate: 256
+DAC.encoder_rates: [2, 4, 5, 8]
+DAC.decoder_rates: [8, 5, 4, 2]
+
+Discriminator.sample_rate: 256
+Discriminator.fft_sizes: [256, 128, 64]
+
+train/build_dataset.folders:
+  singh_augmented:
+    - ../hci-data/torch_datasets_singh_augmented/train_augmented_data.pt
+
+val/build_dataset.folders:
+  singh_augmented:
+    - ../hci-data/torch_datasets_singh_augmented/test_data.pt
+
+test/build_dataset.folders:
+  singh_augmented:
+    - ../hci-data/torch_datasets_singh_augmented/test_data.pt
