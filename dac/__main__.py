@@ -5,8 +5,9 @@ import argbind
 from dac.utils import download
 from dac.utils.decode import decode
 from dac.utils.encode import encode
+from dac.utils.encode_decode import encode_decode
 
-STAGES = ["encode", "decode", "download"]
+STAGES = ["encode", "decode", "encode_decode", "download"]
 
 
 def run(stage: str):

@@ -8,6 +8,7 @@ import torch
 from audiotools import AudioSignal
 from audiotools.core import util
 from tqdm import tqdm
+from sklearn.metrics import mean_absolute_percentage_error
 
 from dac.utils import load_model
 from scripts.dataloader import MyDataset
@@ -15,12 +16,11 @@ from scripts.dataloader import MyDataset
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
-@argbind.bind(group="encode", positional=True, without_prefix=True)
+@argbind.bind(group="encode_decode", positional=True, without_prefix=True)
 @torch.inference_mode()
 @torch.no_grad()
-def encode(
+def encode_decode(
     input: str,
-    output: str = "",
     weights_path: str = "",
     model_tag: str = "latest",
     model_bitrate: str = "8kbps",
@@ -68,26 +68,27 @@ def encode(
     data_file = torch.load(input)
     dataset = MyDataset(data_file)
 
-    output = Path(output)
-    output.mkdir(parents=True, exist_ok=True)
+    errors = []
 
     for i in tqdm(range(len(dataset)), desc="Encoding files"):
         # Load file
         signal = dataset[i]["signal"]
 
         # Encode audio to .dac format
-        artifact = generator.compress(signal, win_duration, verbose=verbose, **kwargs)
+        encoded = generator.compress(signal, win_duration, verbose=verbose, **kwargs)
+        decoded = generator.decompress(encoded, verbose=verbose)
 
-        # Compute output path
-        relative_path = Path(dataset[i]["path"])
-        output_name = relative_path.with_suffix(".dac")
-        output_path = output / output_name
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        true = signal.numpy().squeeze()
+        predicted = decoded.numpy().squeeze()
 
-        artifact.save(output_path)
+        mape = mean_absolute_percentage_error(true, predicted)
+        errors.append(mape)
+
+    print(errors)
+    print(f"Mean mape: {np.mean(errors)}, median mape: {np.median(errors)}, std dev mape: {np.std(errors)}")
 
 
 if __name__ == "__main__":
     args = argbind.parse_args()
     with argbind.scope(args):
-        encode()
+        encode_decode()

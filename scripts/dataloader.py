@@ -14,10 +14,14 @@ class MyDataset(torch.utils.data.Dataset):
     """
 
     _NUM_ELECTRODES = 10
+    _EEG_INDEX = 2
 
     def __init__(self, samples):
         self.num_samples = len(samples)
         self.data = samples
+
+        self.data_min = min([x[0][self._EEG_INDEX].min() for x in self.data])
+        self.data_max = max([x[0][self._EEG_INDEX].max() for x in self.data])
 
     def __len__(self):
         return self.num_samples * self._NUM_ELECTRODES
@@ -27,8 +31,10 @@ class MyDataset(torch.utils.data.Dataset):
         idx_within = idx % self._NUM_ELECTRODES
 
         # Extract only the EEG signal
-        eeg_index = 2
-        sample = self.data[real_idx][0][eeg_index].T[idx_within]
+        sample = self.data[real_idx][0][self._EEG_INDEX].T[idx_within]
+
+        # Try normalising the data
+        sample = (sample - self.data_min) / (self.data_max - self.data_min)
 
         item = {
             "signal": AudioSignal(sample, sample_rate=256),
