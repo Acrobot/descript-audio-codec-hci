@@ -8,7 +8,15 @@ DAC.encoder_rates: [2, 4, 5, 8]
 DAC.decoder_rates: [8, 5, 4, 2]
 
 Discriminator.sample_rate: 256
-Discriminator.fft_sizes: [256, 128, 64]
+Discriminator.fft_sizes: [1024, 512, 256, 128, 64]
+
+lambdas:
+  waveform/loss: 15.0
+  stft/loss: 5.0
+  adv/feat_loss: 2.0
+  adv/gen_loss: 1.0
+  vq/commitment_loss: 0.25
+  vq/codebook_loss: 1.0
 
 train/build_dataset.folders:
   singh_augmented:

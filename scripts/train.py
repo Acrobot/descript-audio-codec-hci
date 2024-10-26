@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 import wandb
@@ -7,6 +8,7 @@ from pathlib import Path
 
 import argbind
 import torch
+import multiprocessing as mp
 from audiotools import AudioSignal
 from audiotools import ml
 from audiotools.core import util
@@ -99,9 +101,9 @@ class State:
     scheduler_d: ExponentialLR
 
     stft_loss: losses.MultiScaleSTFTLoss
-    mel_loss: losses.MelSpectrogramLoss
+    # mel_loss: losses.MelSpectrogramLoss
     gan_loss: losses.GANLoss
-    waveform_loss: losses.L1Loss
+    waveform_loss: losses.L2Loss
 
     train_data: AudioDataset
     val_data: AudioDataset
@@ -168,9 +170,9 @@ def load(
     with argbind.scope(args, "val"):
         val_data = build_dataset()
 
-    waveform_loss = losses.L1Loss()
+    waveform_loss = losses.L2Loss()
     stft_loss = losses.MultiScaleSTFTLoss()
-    mel_loss = losses.MelSpectrogramLoss()
+    # mel_loss = losses.MelSpectrogramLoss()
     gan_loss = losses.GANLoss(discriminator)
 
     return State(
@@ -182,7 +184,7 @@ def load(
         scheduler_d=scheduler_d,
         waveform_loss=waveform_loss,
         stft_loss=stft_loss,
-        mel_loss=mel_loss,
+        # mel_loss=mel_loss,
         gan_loss=gan_loss,
         tracker=tracker,
         train_data=train_data,
@@ -192,7 +194,7 @@ def load(
 
 @timer()
 @torch.no_grad()
-def val_loop(batch, state, accel):
+def val_loop(batch, state, accel, lambdas):
     state.generator.eval()
     batch = util.prepare_batch(batch, accel.device)
     if "transform_args" in batch:
@@ -206,12 +208,15 @@ def val_loop(batch, state, accel):
     out = state.generator(signal.audio_data, signal.sample_rate)
     recons = AudioSignal(out["audio"], signal.sample_rate)
 
-    return {
-        "loss": state.mel_loss(recons, signal),
-        "mel/loss": state.mel_loss(recons, signal),
+    outputs = {
+        # "loss": state.mel_loss(recons, signal),
+        # "mel/loss": state.mel_loss(recons, signal),
         "stft/loss": state.stft_loss(recons, signal),
         "waveform/loss": state.waveform_loss(recons, signal),
     }
+    outputs["loss"] = sum([v * outputs[k] for k, v in lambdas.items() if k in outputs])
+
+    return outputs
 
 
 @timer()
@@ -242,14 +247,14 @@ def train_loop(state, batch, accel, lambdas):
     accel.backward(output["adv/disc_loss"])
     accel.scaler.unscale_(state.optimizer_d)
     output["other/grad_norm_d"] = torch.nn.utils.clip_grad_norm_(
-        state.discriminator.parameters(), 10.0
+        state.discriminator.parameters(), 1
     )
     accel.step(state.optimizer_d)
     state.scheduler_d.step()
 
     with accel.autocast():
         output["stft/loss"] = state.stft_loss(recons, signal)
-        output["mel/loss"] = state.mel_loss(recons, signal)
+        # output["mel/loss"] = state.mel_loss(recons, signal)
         output["waveform/loss"] = state.waveform_loss(recons, signal)
         (
             output["adv/gen_loss"],
@@ -263,7 +268,7 @@ def train_loop(state, batch, accel, lambdas):
     accel.backward(output["loss"])
     accel.scaler.unscale_(state.optimizer_g)
     output["other/grad_norm"] = torch.nn.utils.clip_grad_norm_(
-        state.generator.parameters(), 1e3
+        state.generator.parameters(), 1
     )
     accel.step(state.optimizer_g)
     state.scheduler_g.step()
@@ -280,7 +285,7 @@ def checkpoint(state, save_iters, save_path):
 
     tags = ["latest"]
     state.tracker.print(f"Saving to {str(Path('.').absolute())}")
-    if state.tracker.is_best("val", "mel/loss"):
+    if state.tracker.is_best("val", "loss"):
         state.tracker.print(f"Best generator so far")
         tags.append("best")
     if state.tracker.step in save_iters:
@@ -336,9 +341,9 @@ def save_samples(state, val_idx, writer):
             )
 
 
-def validate(state, val_dataloader, accel):
+def validate(state, val_dataloader, accel, lambdas):
     for batch in val_dataloader:
-        output = val_loop(batch, state, accel)
+        output = val_loop(batch, state, accel, lambdas)
     # Consolidate state dicts if using ZeroRedundancyOptimizer
     if hasattr(state.optimizer_g, "consolidate_state_dict"):
         state.optimizer_g.consolidate_state_dict()
@@ -353,7 +358,7 @@ def train(
     seed: int = 0,
     save_path: str = "ckpt",
     num_iters: int = 250000,
-    save_iters: list = [10000, 50000, 100000, 200000],
+    save_iters: list = [10000, 20000, 30000, 100000, 200000],
     sample_freq: int = 10000,
     valid_freq: int = 1000,
     batch_size: int = 12,
@@ -361,7 +366,9 @@ def train(
     num_workers: int = 8,
     val_idx: list = [0, 1, 2, 3, 4, 5, 6, 7],
     lambdas: dict = {
-        "mel/loss": 100.0,
+        # "mel/loss": 100.0,
+        "waveform/loss": 100.0,
+        "stft/loss": 100.0,
         "adv/feat_loss": 2.0,
         "adv/gen_loss": 1.0,
         "vq/commitment_loss": 0.25,
@@ -377,15 +384,7 @@ def train(
         writer=writer, log_file=f"{save_path}/log.txt", rank=accel.local_rank
     )
 
-    wandb.init(
-        # set the wandb project where this run will be logged
-        project="descript-audio-codec",
-
-        # track hyperparameters and run metadata
-        config=args
-    )
-
-    state = load(args, accel, tracker, save_path)
+    state = load(dict(**wandb.config), accel, tracker, save_path)
     train_dataloader = accel.prepare_dataloader(
         state.train_data,
         start_idx=state.tracker.step * batch_size,
@@ -429,7 +428,7 @@ def train(
                 save_samples(state, val_idx, writer)
 
             if tracker.step % valid_freq == 0 or last_iter:
-                validation_output = validate(state, val_dataloader, accel)
+                validation_output = validate(state, val_dataloader, accel, lambdas)
                 wandb.log({"val": validation_output})
                 checkpoint(state, save_iters, save_path)
                 # Reset validation progress bar, print summary since last validation.
@@ -439,11 +438,48 @@ def train(
                 break
 
 
-if __name__ == "__main__":
+def main():
     args = argbind.parse_args()
     args["args.debug"] = int(os.getenv("LOCAL_RANK", 0)) == 0
+    args["AdamW.lr"] = 0.0001627778358647439
+    args["DAC.n_codebooks"] = 11
+    args["DAC.codebook_size"] = 1852
+
     with argbind.scope(args):
+        global accel
         with Accelerator() as accel:
             if accel.local_rank != 0:
-                sys.tracebacklimit = 0
-            train(args, accel)
+                sys.tracebacklim1it = 0
+            try:
+                wandb.init(
+                    # set the wandb project where this run will be logged
+                    project="descript-audio-codec",
+
+                    # track hyperparameters and run metadata
+                    config=args
+                )
+
+                # train(args, accel, save_path=str(Path(args["save_path"]) / wandb.run.id))
+                train(args, accel, save_path=str(Path(args["save_path"])))
+            except Exception as e:
+                logging.exception(e)
+
+
+if __name__ == "__main__":
+    sweep_configuration = {
+        "method": "random",
+        "name": "sweep",
+        "metric": {"goal": "minimize", "name": "val.waveform/loss"},
+        "parameters": {
+            "DAC.n_codebooks": {"min": 8, "max": 12},
+            "DAC.codebook_size": {"min": 512, "max": 2048},
+            "AdamW.lr": {"max": 0.001, "min": 0.00001},
+        },
+    }
+    # sweep_id = wandb.sweep(sweep=sweep_configuration, project="descript-audio-codec")
+
+    # wandb.agent(sweep_id, function=main, count=10)
+    # wandb.agent("q8ht27f1", project="descript-audio-codec", function=main, count=2)
+    main()
+
+

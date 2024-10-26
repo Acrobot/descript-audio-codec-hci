@@ -47,6 +47,45 @@ class L1Loss(nn.L1Loss):
             y = getattr(y, self.attribute)
         return super().forward(x, y)
 
+class L2Loss(nn.MSELoss):
+    """L2 Loss between AudioSignals. Defaults
+    to comparing ``audio_data``, but any
+    attribute of an AudioSignal can be used.
+
+    Parameters
+    ----------
+    attribute : str, optional
+        Attribute of signal to compare, defaults to ``audio_data``.
+    weight : float, optional
+        Weight of this loss, defaults to 1.0.
+
+    Implementation copied from: https://github.com/descriptinc/lyrebird-audiotools/blob/961786aa1a9d628cca0c0486e5885a457fe70c1a/audiotools/metrics/distance.py
+    """
+
+    def __init__(self, attribute: str = "audio_data", weight: float = 1.0, **kwargs):
+        self.attribute = attribute
+        self.weight = weight
+        super().__init__(**kwargs)
+
+    def forward(self, x: AudioSignal, y: AudioSignal):
+        """
+        Parameters
+        ----------
+        x : AudioSignal
+            Estimate AudioSignal
+        y : AudioSignal
+            Reference AudioSignal
+
+        Returns
+        -------
+        torch.Tensor
+            L1 loss between AudioSignal attributes.
+        """
+        if isinstance(x, AudioSignal):
+            x = getattr(x, self.attribute)
+            y = getattr(y, self.attribute)
+        return super().forward(x, y)
+
 
 class SISDRLoss(nn.Module):
     """
@@ -316,10 +355,8 @@ class MelSpectrogramLoss(nn.Module):
                 "hop_length": s.hop_length,
                 "window_type": s.window_type,
             }
-            # x_mels = x.mel_spectrogram(n_mels, mel_fmin=fmin, mel_fmax=fmax, **kwargs)
-            # y_mels = y.mel_spectrogram(n_mels, mel_fmin=fmin, mel_fmax=fmax, **kwargs)
-            x_mels = torch.abs(x.stft(**kwargs))
-            y_mels = torch.abs(y.stft(**kwargs))
+            x_mels = x.mel_spectrogram(n_mels, mel_fmin=fmin, mel_fmax=fmax, **kwargs)
+            y_mels = y.mel_spectrogram(n_mels, mel_fmin=fmin, mel_fmax=fmax, **kwargs)
 
             loss += self.log_weight * self.loss_fn(
                 x_mels.clamp(self.clamp_eps).pow(self.pow).log10(),

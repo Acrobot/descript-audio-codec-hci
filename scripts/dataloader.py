@@ -74,8 +74,8 @@ def MyDataLoader(train_file, test_file, batch_size, num_workers=1):
     train_dataset = MyDataset(training)
     eval_dataset = MyDataset(validation)
 
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    eval_loader = torch.utils.data.DataLoader(eval_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, drop_last=True)
+    eval_loader = torch.utils.data.DataLoader(eval_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, drop_last=True)
     
     y_train = [y for x, y in training]
     _, train_distr = np.unique(y_train, return_counts=True) # number of labels in train dataset, for each class

@@ -84,8 +84,10 @@ def encode_decode(
         mape = mean_absolute_percentage_error(true, predicted)
         errors.append(mape)
 
-    print(errors)
-    print(f"Mean mape: {np.mean(errors)}, median mape: {np.median(errors)}, std dev mape: {np.std(errors)}")
+    errors = np.array(errors)
+    percentiles = (50, 60, 70, 80, 90, 95, 99)
+    error_percentiles = {k: np.percentile(errors, k) for k in percentiles}
+    print(f"Percentile of errors: " + ",\n".join(f'{pct}: {value}' for pct, value in error_percentiles.items()))
 
 
 if __name__ == "__main__":
