@@ -22,6 +22,7 @@ def encode(
     input: str,
     output: str = "",
     weights_path: str = "",
+    signal_type: str = "",
     model_tag: str = "latest",
     model_bitrate: str = "8kbps",
     n_quantizers: int = None,
@@ -66,7 +67,7 @@ def encode(
     # input = Path(input)
     # audio_files = util.find_audio(input)
     data_file = torch.load(input)
-    dataset = MyDataset(data_file)
+    dataset = MyDataset(data_file, config=signal_type)
 
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)

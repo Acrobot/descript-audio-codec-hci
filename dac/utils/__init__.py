@@ -5,7 +5,7 @@ from audiotools import ml
 
 import dac
 
-DAC = dac.model.DAC
+
 Accelerator = ml.Accelerator
 
 __MODEL_LATEST_TAGS__ = {
@@ -119,5 +119,5 @@ def load_model(
         load_path = download(
             model_type=model_type, model_bitrate=model_bitrate, tag=tag
         )
-    generator = DAC.load(load_path)
+    generator = dac.model.DAC.load(load_path)
     return generator

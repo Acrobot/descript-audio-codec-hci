@@ -7,6 +7,8 @@ from audiotools import STFTParams
 from einops import rearrange
 from torch.nn.utils import weight_norm
 
+from dac.utils.audiosignalwt import AudioSignalDWT
+
 
 def WNConv1d(*args, **kwargs):
     act = kwargs.pop("act", True)
@@ -172,6 +174,22 @@ class MRD(nn.Module):
         return fmap
 
 
+class WaveletDiscriminator(nn.Module):
+    def __init__(
+        self,
+        sample_rate: int = 44100,
+    ):
+        """Complex multi-band wavelet discriminator.
+        """
+        super().__init__()
+
+        self.sample_rate = sample_rate
+
+    def forward(self, x):
+        x = AudioSignalDWT(x, self.sample_rate)
+        return x.dwt()
+
+
 class Discriminator(ml.BaseModel):
     def __init__(
         self,
@@ -201,7 +219,8 @@ class Discriminator(ml.BaseModel):
         discs = []
         discs += [MPD(p) for p in periods]
         discs += [MSD(r, sample_rate=sample_rate) for r in rates]
-        discs += [MRD(f, sample_rate=sample_rate, bands=bands) for f in fft_sizes]
+        # discs += [MRD(f, sample_rate=sample_rate, bands=bands) for f in fft_sizes]
+        discs += [WaveletDiscriminator(sample_rate=sample_rate)]
         self.discriminators = nn.ModuleList(discs)
 
     def preprocess(self, y):

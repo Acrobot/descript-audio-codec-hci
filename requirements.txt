@@ -8,3 +8,5 @@ tqdm
 tensorboard
 numba>=0.5.7
 jupyterlab
+pywavelets
+ptwt

@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Union, Literal
 
 from audiotools import AudioSignal
 from audiotools.core import util
@@ -13,25 +13,35 @@ class MyDataset(torch.utils.data.Dataset):
     - samples: list of lists, each containing list of tensors (modalities) + labels
     """
 
-    _NUM_ELECTRODES = 10
-    _EEG_INDEX = 2
+    _CONFIGS = {
+        "eye": {"index": 0, "channels": 4},
+        "gsr": {"index": 1, "channels": 1},
+        "eeg": {"index": 2, "channels": 10},
+        "ecg": {"index": 3, "channels": 3},
+    }
 
-    def __init__(self, samples):
+    def __init__(self, samples, config: Literal["eye", "gsr", "eeg", "ecg"]):
         self.num_samples = len(samples)
         self.data = samples
 
-        self.data_min = min([x[0][self._EEG_INDEX].min() for x in self.data])
-        self.data_max = max([x[0][self._EEG_INDEX].max() for x in self.data])
+        self.index = self._CONFIGS[config]["index"]
+        self.channels = self._CONFIGS[config]["channels"]
+
+        self.data_min = min([x[0][self.index].min() for x in self.data])
+        self.data_max = max([x[0][self.index].max() for x in self.data])
 
     def __len__(self):
-        return self.num_samples * self._NUM_ELECTRODES
+        return self.num_samples * self.channels
         
     def __getitem__(self, idx):
-        real_idx = idx // self._NUM_ELECTRODES
-        idx_within = idx % self._NUM_ELECTRODES
+        real_idx = idx // self.channels
+        idx_within = idx % self.channels
 
-        # Extract only the EEG signal
-        sample = self.data[real_idx][0][self._EEG_INDEX].T[idx_within]
+        # Extract only the right signal
+        sample = self.data[real_idx][0][self.index]
+
+        if self.channels != 1:
+            sample = sample.T[idx_within]
 
         # Try normalising the data
         sample = (sample - self.data_min) / (self.data_max - self.data_min)

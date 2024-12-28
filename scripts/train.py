@@ -1,6 +1,8 @@
 import logging
 import os
 import sys
+from typing import Literal
+
 import wandb
 import warnings
 from dataclasses import dataclass
@@ -85,9 +87,10 @@ def build_transform(
 
 @argbind.bind("train", "val", "test")
 def build_dataset(
+    signal_type: str = None,
     folders: dict = None,
 ):
-    return MyDataset(torch.load(next(iter(folders.values()))[0]))
+    return MyDataset(torch.load(next(iter(folders.values()))[0]), config=signal_type)
 
 
 @dataclass
@@ -440,10 +443,10 @@ def train(
 
 def main():
     args = argbind.parse_args()
-    args["args.debug"] = int(os.getenv("LOCAL_RANK", 0)) == 0
-    args["AdamW.lr"] = 0.0001627778358647439
-    args["DAC.n_codebooks"] = 11
-    args["DAC.codebook_size"] = 1852
+    # args["args.debug"] = int(os.getenv("LOCAL_RANK", 0)) == 0
+    # args["AdamW.lr"] = 0.0001627778358647439
+    # args["DAC.n_codebooks"] = 11
+    # args["DAC.codebook_size"] = 1852
 
     with argbind.scope(args):
         global accel
@@ -459,16 +462,16 @@ def main():
                     config=args
                 )
 
-                # train(args, accel, save_path=str(Path(args["save_path"]) / wandb.run.id))
-                train(args, accel, save_path=str(Path(args["save_path"])))
+                train(args, accel, save_path=str(Path(args["save_path"]) / wandb.run.id))
+                # train(args, accel, save_path=str(Path(args["save_path"])))
             except Exception as e:
                 logging.exception(e)
 
 
 if __name__ == "__main__":
     sweep_configuration = {
+        "name": "gsr_sweep",
         "method": "random",
-        "name": "sweep",
         "metric": {"goal": "minimize", "name": "val.waveform/loss"},
         "parameters": {
             "DAC.n_codebooks": {"min": 8, "max": 12},
@@ -476,10 +479,9 @@ if __name__ == "__main__":
             "AdamW.lr": {"max": 0.001, "min": 0.00001},
         },
     }
-    # sweep_id = wandb.sweep(sweep=sweep_configuration, project="descript-audio-codec")
+    sweep_id = wandb.sweep(sweep=sweep_configuration, project="descript-audio-codec")
 
-    # wandb.agent(sweep_id, function=main, count=10)
-    # wandb.agent("q8ht27f1", project="descript-audio-codec", function=main, count=2)
-    main()
+    wandb.agent(sweep_id, function=main, count=10)
+    # main()
 
 
