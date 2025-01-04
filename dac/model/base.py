@@ -209,7 +209,7 @@ class CodecMixin:
 
             audio_data = x.audio_data.to(self.device)
             audio_data = self.preprocess(audio_data, self.sample_rate)
-            _, c, _, _, _ = self.encode(audio_data, n_quantizers)
+            _, c, *_ = self.encode(audio_data, n_quantizers)
             codes.append(c.to(original_device))
             chunk_length = c.shape[-1]
 
@@ -267,8 +267,9 @@ class CodecMixin:
 
         for i in range_fn(0, codes.shape[-1], chunk_length):
             c = codes[..., i : i + chunk_length].to(self.device)
-            z = self.quantizer.from_codes(c)[0]
-            r = self.decode(z)
+            # z = self.quantizer.from_codes(c)[0]
+            z = self.quantizer.get_output_from_indices(c.permute(0, 2, 1))
+            r = self.decode(z.permute(0, 2, 1))
             recons.append(r.to(original_device))
 
         recons = torch.cat(recons, dim=-1)

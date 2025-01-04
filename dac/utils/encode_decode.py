@@ -21,6 +21,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 @torch.no_grad()
 def encode_decode(
     input: str,
+    signal_type: str = "eeg",
     weights_path: str = "",
     model_tag: str = "latest",
     model_bitrate: str = "8kbps",
@@ -66,7 +67,7 @@ def encode_decode(
     # input = Path(input)
     # audio_files = util.find_audio(input)
     data_file = torch.load(input)
-    dataset = MyDataset(data_file)
+    dataset = MyDataset(data_file, signal_type)
 
     errors = []
 
@@ -75,7 +76,7 @@ def encode_decode(
         signal = dataset[i]["signal"]
 
         # Encode audio to .dac format
-        encoded = generator.compress(signal, win_duration, verbose=verbose, **kwargs)
+        encoded = generator.compress(signal, win_duration, normalize_db=None, verbose=verbose, **kwargs)
         decoded = generator.decompress(encoded, verbose=verbose)
 
         true = signal.numpy().squeeze()

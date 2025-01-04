@@ -74,28 +74,3 @@ class MyDataset(torch.utils.data.Dataset):
             Dictionary of batched data.
         """
         return util.collate(list_of_dicts, n_splits=n_splits)
-
-def MyDataLoader(train_file, test_file, batch_size, num_workers=1):
-    print("----Loading dataset----")
-    
-    training = torch.load(train_file)  # Loads an object saved with torch.save() from a file
-    validation = torch.load(test_file)  # Loads an object saved with torch.save() from a file
-    
-    train_dataset = MyDataset(training)
-    eval_dataset = MyDataset(validation)
-
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, drop_last=True)
-    eval_loader = torch.utils.data.DataLoader(eval_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, drop_last=True)
-    
-    y_train = [y for x, y in training]
-    _, train_distr = np.unique(y_train, return_counts=True) # number of labels in train dataset, for each class
-    weights = sum(train_distr)/train_distr
-    sample_weights= weights/sum(weights)  # sample_weights in case of unbalanced data
-
-    print('Dataset: MAHNOB-HCI')
-    print("#Traning samples: ", len(train_dataset))
-    print("#Validation samples: ", len(eval_dataset))
-    print("#Training distribution: ", train_distr)
-    print("-------------------------")
-
-    return train_loader, eval_loader, sample_weights

@@ -21,7 +21,15 @@ CWTParams = namedtuple(
     ["wavelet_name", "scales"],
 )
 
-BaseModel.EXTERN.extend(["pywt", "ptwt"])
+BaseModel.EXTERN.extend([
+    "pywt",
+    "ptwt",
+    "vector_quantize_pytorch",
+    "vector_quantize_pytorch.residual_vq",
+    "vector_quantize_pytorch.residual_lfq",
+    "vector_quantize_pytorch.vector_quantize_pytorch",
+    "vector_quantize_pytorch.lookup_free_quantization"
+])
 
 
 class AudioSignalDWT(AudioSignal):

@@ -241,7 +241,7 @@ def train_loop(state, batch, accel, lambdas):
         out = state.generator(signal.audio_data, signal.sample_rate)
         recons = AudioSignal(out["audio"], signal.sample_rate)
         commitment_loss = out["vq/commitment_loss"]
-        codebook_loss = out["vq/codebook_loss"]
+        # codebook_loss = out["vq/codebook_loss"]
 
     with accel.autocast():
         output["adv/disc_loss"] = state.gan_loss.discriminator_loss(recons, signal)
@@ -264,7 +264,7 @@ def train_loop(state, batch, accel, lambdas):
             output["adv/feat_loss"],
         ) = state.gan_loss.generator_loss(recons, signal)
         output["vq/commitment_loss"] = commitment_loss
-        output["vq/codebook_loss"] = codebook_loss
+        # output["vq/codebook_loss"] = codebook_loss
         output["loss"] = sum([v * output[k] for k, v in lambdas.items() if k in output])
 
     state.optimizer_g.zero_grad()
@@ -388,12 +388,20 @@ def train(
     )
 
     state = load(dict(**wandb.config), accel, tracker, save_path)
-    train_dataloader = accel.prepare_dataloader(
+    # train_dataloader = accel.prepare_dataloader(
+    #     state.train_data,
+    #     start_idx=state.tracker.step * batch_size,
+    #     num_workers=num_workers,
+    #     batch_size=batch_size,
+    #     collate_fn=state.train_data.collate,
+    #     shuffle=True
+    # )
+    train_dataloader = torch.utils.data.DataLoader(
         state.train_data,
-        start_idx=state.tracker.step * batch_size,
         num_workers=num_workers,
         batch_size=batch_size,
         collate_fn=state.train_data.collate,
+        shuffle=True
     )
     train_dataloader = get_infinite_loader(train_dataloader)
     val_dataloader = accel.prepare_dataloader(
@@ -457,9 +465,11 @@ def main():
                 wandb.init(
                     # set the wandb project where this run will be logged
                     project="descript-audio-codec",
+                    name="Experiment / ResidualVQ kmeans larger lambda stft shuffled less divisions only waveform",
 
                     # track hyperparameters and run metadata
-                    config=args
+                    config=args,
+                    # mode="disabled"
                 )
 
                 train(args, accel, save_path=str(Path(args["save_path"]) / wandb.run.id))
@@ -479,9 +489,9 @@ if __name__ == "__main__":
             "AdamW.lr": {"max": 0.001, "min": 0.00001},
         },
     }
-    sweep_id = wandb.sweep(sweep=sweep_configuration, project="descript-audio-codec")
+    # sweep_id = wandb.sweep(sweep=sweep_configuration, project="descript-audio-codec")
 
-    wandb.agent(sweep_id, function=main, count=10)
-    # main()
+    # wandb.agent(sweep_id, function=main, count=10)
+    main()
 
 

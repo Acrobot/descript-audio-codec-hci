@@ -7,6 +7,7 @@ import torch
 from audiotools import AudioSignal
 from audiotools.ml import BaseModel
 from torch import nn
+from vector_quantize_pytorch import ResidualVQ, ResidualFSQ, ResidualLFQ
 
 from .base import CodecMixin
 from dac.nn.layers import Snake1d
@@ -177,13 +178,28 @@ class DAC(BaseModel, CodecMixin):
         self.n_codebooks = n_codebooks
         self.codebook_size = codebook_size
         self.codebook_dim = codebook_dim
-        self.quantizer = ResidualVectorQuantize(
-            input_dim=latent_dim,
-            n_codebooks=n_codebooks,
+        # self.quantizer = ResidualVectorQuantize(
+        #     input_dim=latent_dim,
+        #     n_codebooks=n_codebooks,
+        #     codebook_size=codebook_size,
+        #     codebook_dim=codebook_dim,
+        #     quantizer_dropout=quantizer_dropout,
+        # )
+        self.quantizer = ResidualVQ(
+            dim=latent_dim,
+            num_quantizers=n_codebooks,
             codebook_size=codebook_size,
             codebook_dim=codebook_dim,
-            quantizer_dropout=quantizer_dropout,
+            quantize_dropout=quantizer_dropout,
+            kmeans_init=True,
+            kmeans_iters=10
         )
+        # self.quantizer = ResidualLFQ(
+        #     dim=latent_dim,
+        #     num_quantizers=n_codebooks,
+        #     codebook_size=codebook_size,
+        #     quantize_dropout=quantizer_dropout,
+        # )
 
         self.decoder = Decoder(
             latent_dim,
@@ -241,10 +257,10 @@ class DAC(BaseModel, CodecMixin):
                 Number of samples in input audio
         """
         z = self.encoder(audio_data)
-        z, codes, latents, commitment_loss, codebook_loss = self.quantizer(
-            z, n_quantizers
+        z, codes, commitment_loss = self.quantizer(
+            z.permute(0, 2, 1)
         )
-        return z, codes, latents, commitment_loss, codebook_loss
+        return z.permute(0, 2, 1), codes.permute(0, 2, 1), commitment_loss.mean()
 
     def decode(self, z: torch.Tensor):
         """Decode given latent codes and return audio data
@@ -307,7 +323,7 @@ class DAC(BaseModel, CodecMixin):
         """
         length = audio_data.shape[-1]
         audio_data = self.preprocess(audio_data, sample_rate)
-        z, codes, latents, commitment_loss, codebook_loss = self.encode(
+        z, codes, commitment_loss = self.encode(
             audio_data, n_quantizers
         )
 
@@ -316,9 +332,9 @@ class DAC(BaseModel, CodecMixin):
             "audio": x[..., :length],
             "z": z,
             "codes": codes,
-            "latents": latents,
+            # "latents": latents,
             "vq/commitment_loss": commitment_loss,
-            "vq/codebook_loss": codebook_loss,
+            # "vq/codebook_loss": codebook_loss,
         }
 
 

@@ -77,7 +77,7 @@ def encode(
         signal = dataset[i]["signal"]
 
         # Encode audio to .dac format
-        artifact = generator.compress(signal, win_duration, verbose=verbose, **kwargs)
+        artifact = generator.compress(signal, win_duration, normalize_db=None, verbose=verbose, **kwargs)
 
         # Compute output path
         relative_path = Path(dataset[i]["path"])
